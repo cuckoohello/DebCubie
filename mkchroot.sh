@@ -100,7 +100,9 @@ MIRROR=$(printf "${LOCAL_APT_MIRROR}\n" | awk '/deb /{print $2}' | head -n1)
 DIST=$(printf "${LOCAL_APT_MIRROR}\n" | awk '/deb /{print $3}' | head -n1)
 
 # create chroot
-debootstrap --arch ${IMG_ARCH} ${DIST} ${ROOT_DIR} ${MIRROR}
+debootstrap --arch ${IMG_ARCH} --foreign ${DIST} ${ROOT_DIR} ${MIRROR}
+cp /usr/bin/qemu-arm-static ${ROOT_DIR}/usr/bin/
+(chroot ${ROOT_DIR} /debootstrap/debootstrap --second-stage)
 mount -t proc proc ${ROOT_DIR}/proc
 mount -t devpts devpts ${ROOT_DIR}/dev/pts
 
