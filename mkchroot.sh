@@ -130,6 +130,10 @@ ff02::2 ip6-allrouters
 ff02::3 ip6-allhosts
 EOF
 
+cat >>${ROOT_DIR}/etc/inittab<<EOF
+T0:2345:respawn:/sbin/getty -L ttyS0 115200 linux
+EOF
+
 # add local network interface
 cat >>${ROOT_DIR}/etc/network/interfaces<<EOF
 
