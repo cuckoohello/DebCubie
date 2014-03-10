@@ -18,7 +18,6 @@
 
 IMG_NAME=""
 ROOT_DIR=""
-SKIP_GRUB="n"
 
 . ./functions.sh
 
@@ -79,64 +78,6 @@ create_bootable_img()
 	parted -s "$img" "set 1 boot on"
 }
 
-# @img - image name
-# @mntpt - path to mounted root directory
-grub_install()
-{
-	img="$1"
-	mntpt="$2"
-
-	mkdir -p ${mntpt}/boot/grub
-	cp /usr/lib/grub/i386-pc/stage[12] ${mntpt}/boot/grub
-	cp /usr/lib/grub/i386-pc/e2fs_stage1_5 ${mntpt}/boot/grub
-
-	cat >${mntpt}/boot/grub/menu.lst<<EOF
-default 0
-timeout 5
-color cyan/blue white/blue
-EOF
-	installer_added=0
-	label=`sed -ne 's/^LABEL=\(.\+\)[[:space:]]\+\/[[:space:]]\+.*/\1/p' configs/${CONFIG_TYPE}/fstab-ext3`
-	prefix=
-	grep -q ' ${mntpt}/boot ' /proc/mounts && prefix=/boot
-	for kern in ${mntpt}/boot/vmlinuz-*; do
-		v=$(basename $kern | sed 's/vmlinuz-//')
-		if [ "${v}" = '*' ]; then
-			echo "*** Error: no kernel images found in /boot!" 1>&2
-			exit 1
-		fi
-		cat >>${mntpt}/boot/grub/menu.lst<<EOF
-
-title		Debian GNU/Linux, kernel ${v}
-root		(hd0,0)
-kernel		${prefix}/vmlinuz-${v} root=LABEL=${label} ro
-initrd		${prefix}/initrd.img-${v}
-boot
-EOF
-		if [ "$installer_added" = "0" ]; then
-			installer_added=1
-			cat >>${mntpt}/boot/grub/menu.lst<<EOF
-
-title           Debian GNU/Linux Installer
-root            (hd0,0)
-kernel          ${prefix}/vmlinuz-${v} root=LABEL=${label} ro installer
-initrd          ${prefix}/initrd.img-${v}
-boot
-EOF
-		fi
-
-	done
-
-	# grub-install is pretty broken, so we do this manually
-	geom=`parted -s "$img" "unit chs" "print" | sed -ne 's/geometry: \([0-9]\+\),\([0-9]\+\),\([0-9]\+\)/:\1 \2 \3:/p' | cut -d: -f2`
-	grub --batch --device-map=/dev/null <<EOF
-device (hd0) $img
-geometry (hd0) $geom
-root (hd0,0)
-setup (hd0)
-EOF
-
-}
 
 # @img - image to create a filesystem on
 # @root_dir - root directory to populate the fs with
@@ -202,9 +143,6 @@ mk_ext3_fs()
 	
 	# populate the filesystem
 	cp -ra "$root_dir"/* "$mount_point_root" || true
-	if [ "$SKIP_GRUB" != "y" ]; then
-		grub_install "$img" "$mount_point_root"
-	fi
 
 	# umount the filesystem
 	sed -ne 's/^LABEL=//p' configs/${CONFIG_TYPE}/fstab-ext3 | \
@@ -235,7 +173,6 @@ usage()
 	echo "Options:" 1>&2
 	echo "  --config-type <config>    directory name in configs/ to use" 1>&2
 	echo "  --help                    display this help screen" 1>&2
-	echo "  --skip-grub               don't install GRUB on image" 1>&2
 	echo "" 1>&2
 	exit 1
 }
@@ -250,9 +187,6 @@ do
 			exit 2
 		}
 		shift
-		;;
-	--skip-grub)
-		SKIP_GRUB="y"
 		;;
 	--help|-h)
 		usage
@@ -285,9 +219,6 @@ if [ ! -d "$ROOT_DIR" ]; then
 fi
 
 check_for_cmds losetup parted mke2fs tune2fs || exit 1
-if [ "$SKIP_GRUB" != "y" ]; then
-	check_for_cmds grub || exit 1
-fi
 
 # create image's /etc/fstab
 if [ ! -f ./configs/${CONFIG_TYPE}/fstab-ext3 ]; then
@@ -295,12 +226,6 @@ if [ ! -f ./configs/${CONFIG_TYPE}/fstab-ext3 ]; then
 	exit 1
 fi
 sed 's/[[:space:]]#.*//' ./configs/${CONFIG_TYPE}/fstab-ext3 > ${ROOT_DIR}/etc/fstab
-
-# TODO: this needs to go into an OFW package; here it's a hack
-# create image's /boot/olpc.fth
-if [ -f ./configs/${CONFIG_TYPE}/olpc.fth-ext3 ]; then
-	cp ./configs/${CONFIG_TYPE}/olpc.fth-ext3 ${ROOT_DIR}/boot/olpc.fth
-fi
 
 create_bootable_img ${IMG_NAME}
 mk_ext3_fs ${IMG_NAME} ${ROOT_DIR}
